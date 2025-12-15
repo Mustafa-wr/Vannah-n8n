@@ -1,0 +1,58 @@
+services:
+  # ============================================================================
+  # n8n - Workflow Automation
+  # ============================================================================
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - agent_network
+
+  # ============================================================================
+  # Vanna API - Natural Language to SQL
+  # ============================================================================
+  vanna-api:
+    build: ./vanna-api
+    container_name: vanna-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-postgres}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASS=${DB_PASS}
+    volumes:
+      - vanna_chroma:/app/chroma_data
+    networks:
+      - agent_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  agent_network:
+    driver: bridge
+
+volumes:
+  n8n_data:
+  vanna_chroma:
