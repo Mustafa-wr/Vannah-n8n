@@ -305,12 +305,30 @@ async def train_schema():
         
         # Add documentation about table naming convention
         vanna.train(documentation="""
-            IMPORTANT: The main products table is named "Products" with a capital P.
-            In PostgreSQL, you MUST use double quotes for mixed-case table names.
-            Correct: SELECT * FROM "Products"
-            Wrong: SELECT * FROM Products or SELECT * FROM products
+            DATABASE SCHEMA GUIDE:
             
-            Other tables use lowercase: product_category, motor_specs, battery_specs, etc.
+            1. MAIN PRODUCTS TABLE: "Products" (capital P, requires double quotes)
+               - Contains: product_id, title, brand, category, sub_category, weight_g, status, etc.
+               - USE THIS TABLE for questions about:
+                 * Product listings, filtering, searching
+                 * Weight queries (weight_g column)
+                 * Category/brand filtering
+                 * General product information
+               - Example: SELECT * FROM "Products" WHERE weight_g < 250
+               - Example: SELECT * FROM "Products" WHERE category = 'motor'
+            
+            2. SPEC TABLES (lowercase, no quotes needed):
+               - motor_specs: Technical motor specifications (kv, stator size, etc.)
+               - battery_specs: Battery specifications (capacity, voltage, etc.)
+               - frame_specs: Frame specifications
+               - camera_specs: Camera specifications
+               - USE THESE for detailed technical specifications, NOT for weight/price queries
+            
+            3. IMPORTANT RULES:
+               - Always use double quotes for "Products": SELECT * FROM "Products"
+               - For product weight queries, use "Products".weight_g
+               - For product counts/listings, use "Products"
+               - Join spec tables with "Products" for combined queries
         """)
         
         for sq in sample_queries:

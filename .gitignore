@@ -1,6 +1,6 @@
 # Ignore environment files with secrets
 .env
-
+README.md
 # Python
 __pycache__/
 *.py[cod]
