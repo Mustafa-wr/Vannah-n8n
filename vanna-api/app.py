@@ -277,30 +277,69 @@ async def train_schema():
         # Add some sample queries for shopping drone context
         # Note: PostgreSQL requires double-quotes for mixed-case table names
         sample_queries = [
-            {
-                "question": "Show me all products",
-                "sql": 'SELECT * FROM "Products"'
-            },
-            {
-                "question": "Show me all drones under $500",
-                "sql": 'SELECT * FROM "Products" WHERE price < 500 ORDER BY price ASC'
-            },
-            {
-                "question": "List drones with weight less than 250 grams",
-                "sql": 'SELECT * FROM "Products" WHERE weight_g < 250 ORDER BY weight_g ASC'
-            },
-            {
-                "question": "How many products are there",
-                "sql": 'SELECT COUNT(*) FROM "Products"'
-            },
-            {
-                "question": "Show me all product categories",
-                "sql": 'SELECT * FROM product_category'
-            },
-            {
-                "question": "What motor specs are available",
-                "sql": 'SELECT * FROM motor_specs'
-            }
+            # === GENERAL PRODUCT QUERIES ===
+            {"question": "Show me all products", "sql": 'SELECT * FROM "Products"'},
+            {"question": "List all products", "sql": 'SELECT * FROM "Products"'},
+            {"question": "What products do you have", "sql": 'SELECT * FROM "Products"'},
+            {"question": "How many products are there", "sql": 'SELECT COUNT(*) FROM "Products"'},
+            
+            # === FRAMES BY SIZE ===
+            {"question": "Show me all frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\''},
+            {"question": "What frames do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\''},
+            {"question": "Show me 5-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
+            {"question": "Show me 5 inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
+            {"question": "5-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
+            {"question": "Show me 3-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'3-inch\''},
+            {"question": "Show me 7-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'7-inch\''},
+            {"question": "What frames for 5 inch drones do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
+            {"question": "Cinewhoop frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'cinewhoop\''},
+            
+            # === MOTORS ===
+            {"question": "Show me all motors", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\''},
+            {"question": "What motors do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\''},
+            {"question": "Show me motors under 20 grams", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\' AND CAST(weight_g AS INTEGER) < 20'},
+            {"question": "Whoop motors", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\' AND sub_category = \'whoop\''},
+            {"question": "5 inch motors", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\' AND sub_category = \'5inch\''},
+            
+            # === BATTERIES ===
+            {"question": "Show me all batteries", "sql": 'SELECT * FROM "Products" WHERE category = \'battery\''},
+            {"question": "What batteries do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'battery\''},
+            {"question": "6S batteries", "sql": 'SELECT * FROM "Products" WHERE category = \'battery\' AND sub_category = \'6S\''},
+            
+            # === STACKS & ELECTRONICS ===
+            {"question": "Show me all stacks", "sql": 'SELECT * FROM "Products" WHERE category = \'stack\''},
+            {"question": "FC and ESC stacks", "sql": 'SELECT * FROM "Products" WHERE category = \'stack\''},
+            {"question": "Show me VTX options", "sql": 'SELECT * FROM "Products" WHERE category = \'vtx\''},
+            {"question": "What cameras do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'camera\''},
+            {"question": "Show me receivers", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\''},
+            
+            # === BRAND QUERIES ===
+            {"question": "Show me iFlight products", "sql": 'SELECT * FROM "Products" WHERE brand = \'iFlight\''},
+            {"question": "What do you have from BetaFPV", "sql": 'SELECT * FROM "Products" WHERE brand = \'BetaFPV\''},
+            {"question": "T-Motor products", "sql": 'SELECT * FROM "Products" WHERE brand = \'T-Motor\''},
+            {"question": "DJI products", "sql": 'SELECT * FROM "Products" WHERE brand = \'DJI\''},
+            {"question": "Happymodel products", "sql": 'SELECT * FROM "Products" WHERE brand = \'Happymodel\''},
+            
+            # === WEIGHT QUERIES ===
+            {"question": "Lightweight products under 50 grams", "sql": 'SELECT * FROM "Products" WHERE CAST(weight_g AS INTEGER) < 50 ORDER BY weight_g ASC'},
+            {"question": "Products under 100 grams", "sql": 'SELECT * FROM "Products" WHERE CAST(weight_g AS INTEGER) < 100 ORDER BY weight_g ASC'},
+            
+            # === CATEGORY BROWSING ===
+            {"question": "What product categories do you have", "sql": 'SELECT DISTINCT category FROM "Products"'},
+            {"question": "Show me all product categories", "sql": 'SELECT * FROM product_category'},
+            {"question": "What sub-categories are there for frames", "sql": 'SELECT DISTINCT sub_category FROM "Products" WHERE category = \'frame\''},
+            
+            # === PROPS ===
+            {"question": "Show me propellers", "sql": 'SELECT * FROM "Products" WHERE category = \'prop\''},
+            {"question": "What props do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'prop\''},
+            
+            # === ANTENNAS ===
+            {"question": "Show me antennas", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\''},
+            {"question": "What antennas do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\''},
+            
+            # === KITS ===
+            {"question": "Show me kits", "sql": 'SELECT * FROM "Products" WHERE category = \'kit\''},
+            {"question": "What combo kits do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'kit\''},
         ]
         
         # Add documentation about table naming convention
