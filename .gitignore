@@ -9,6 +9,8 @@ __pycache__/
 .Python
 *.egg-info/
 .eggs/
+insert_data.py
+synthetic_data.sql
 
 # ChromaDB local storage (persisted in Docker volume)
 chroma_data/
