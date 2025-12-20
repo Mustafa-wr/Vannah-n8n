@@ -20,6 +20,8 @@ from vanna.chromadb import ChromaDB_VectorStore
 import pandas as pd
 from sqlalchemy import create_engine, text, inspect
 
+from urllib.parse import quote_plus
+
 load_dotenv()
 
 # ============================================================================
@@ -37,10 +39,8 @@ DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("DB_PASS")
 
-# URL-encode password to handle special characters
-from urllib.parse import quote_plus
+# URL-encode password to handle special characters (!@# etc.)
 DB_PASS_ENCODED = quote_plus(DB_PASS) if DB_PASS else ""
-
 DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASS_ENCODED}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 
@@ -51,21 +51,15 @@ DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASS_ENCODED}@{DB_HOST}:{DB
 class VannaGroq(ChromaDB_VectorStore, OpenAI_Chat):
     """Vanna instance using Groq's OpenAI-compatible API and ChromaDB for training."""
     
-    def __init__(self, openai_client=None, model=None, chroma_path=None):
-        # Initialize ChromaDB with its own config (path only)
-        chroma_config = {}
-        if chroma_path:
-            chroma_config["path"] = chroma_path
-        ChromaDB_VectorStore.__init__(self, config=chroma_config)
-        
-        # Initialize OpenAI with client and model
-        openai_config = {
+    def __init__(self, openai_client=None, model=None, chroma_config=None):
+        # Initialize ChromaDB with its own config (no openai client)
+        ChromaDB_VectorStore.__init__(self, config=chroma_config or {})
+        # Initialize OpenAI with client
+        OpenAI_Chat.__init__(self, config={
             "client": openai_client,
             "model": model,
-        }
-        OpenAI_Chat.__init__(self, config=openai_config)
-        
-        # Explicitly set client attribute (required by OpenAI_Chat methods)
+        })
+        # Explicitly set client attribute (required by some Vanna methods)
         self.client = openai_client
         self.model = model
 
@@ -87,7 +81,7 @@ def get_vanna() -> VannaGroq:
         vn = VannaGroq(
             openai_client=groq_client,
             model=GROQ_MODEL,
-            chroma_path="/app/chroma_data"
+            chroma_config={"path": "/app/chroma_data"}
         )
         # Connect to Supabase
         vn.run_sql = run_sql
@@ -274,147 +268,172 @@ async def train_schema():
                 )
                 vanna.train(documentation=fk_doc)
         
-        # Add some sample queries for shopping drone context
-        # Note: PostgreSQL requires double-quotes for mixed-case table names
+        # ====================================================================
+        # REAL DRONE LOGIC TRAINING (Golden Pairs)
+        # ====================================================================
         sample_queries = [
-            # === GENERAL PRODUCT QUERIES ===
-            {"question": "Show me all products", "sql": 'SELECT * FROM "Products"'},
-            {"question": "List all products", "sql": 'SELECT * FROM "Products"'},
-            {"question": "What products do you have", "sql": 'SELECT * FROM "Products"'},
-            {"question": "How many products are there", "sql": 'SELECT COUNT(*) FROM "Products"'},
-            
-            # === FRAMES BY SIZE ===
-            {"question": "Show me all frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\''},
-            {"question": "What frames do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\''},
-            {"question": "Show me 5-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
-            {"question": "Show me 5 inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
-            {"question": "5-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
-            {"question": "Show me 3-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'3-inch\''},
-            {"question": "Show me 7-inch frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'7-inch\''},
-            {"question": "What frames for 5 inch drones do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'5-inch\''},
-            {"question": "Cinewhoop frames", "sql": 'SELECT * FROM "Products" WHERE category = \'frame\' AND sub_category = \'cinewhoop\''},
-            
-            # === MOTORS ===
-            {"question": "Show me all motors", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\''},
-            {"question": "What motors do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\''},
-            {"question": "Show me motors under 20 grams", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\' AND CAST(weight_g AS INTEGER) < 20'},
-            {"question": "Whoop motors", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\' AND sub_category = \'whoop\''},
-            {"question": "5 inch motors", "sql": 'SELECT * FROM "Products" WHERE category = \'motor\' AND sub_category = \'5inch\''},
-            
-            # === BATTERIES ===
-            {"question": "Show me all batteries", "sql": 'SELECT * FROM "Products" WHERE category = \'battery\''},
-            {"question": "What batteries do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'battery\''},
-            {"question": "6S batteries", "sql": 'SELECT * FROM "Products" WHERE category = \'battery\' AND sub_category = \'6S\''},
-            
-            # === STACKS & ELECTRONICS ===
-            {"question": "Show me all stacks", "sql": 'SELECT * FROM "Products" WHERE category = \'stack\''},
-            {"question": "FC and ESC stacks", "sql": 'SELECT * FROM "Products" WHERE category = \'stack\''},
-            {"question": "Show me VTX options", "sql": 'SELECT * FROM "Products" WHERE category = \'vtx\''},
-            {"question": "What cameras do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'camera\''},
-            {"question": "Show me receivers", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\''},
-            
-            # === RECEIVERS (ELRS, CRSF/Crossfire) ===
-            {"question": "Show me ELRS receivers", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\' AND LOWER(sub_category) = \'elrs\''},
-            {"question": "Show me elrs receivers", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\' AND LOWER(sub_category) = \'elrs\''},
-            {"question": "What ELRS receivers do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\' AND LOWER(sub_category) = \'elrs\''},
-            {"question": "Show me Crossfire receivers", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\' AND LOWER(sub_category) = \'crsf\''},
-            {"question": "Show me crsf receivers", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\' AND LOWER(sub_category) = \'crsf\''},
-            {"question": "What Crossfire receivers do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\' AND LOWER(sub_category) = \'crsf\''},
-            {"question": "TBS Crossfire receivers", "sql": 'SELECT * FROM "Products" WHERE category = \'receiver\' AND brand = \'TBS\''},
-            
-            # === BRAND QUERIES ===
-            {"question": "Show me iFlight products", "sql": 'SELECT * FROM "Products" WHERE brand = \'iFlight\''},
-            {"question": "What do you have from BetaFPV", "sql": 'SELECT * FROM "Products" WHERE brand = \'BetaFPV\''},
-            {"question": "T-Motor products", "sql": 'SELECT * FROM "Products" WHERE brand = \'T-Motor\''},
-            {"question": "DJI products", "sql": 'SELECT * FROM "Products" WHERE brand = \'DJI\''},
-            {"question": "Happymodel products", "sql": 'SELECT * FROM "Products" WHERE brand = \'Happymodel\''},
-            {"question": "TBS products", "sql": 'SELECT * FROM "Products" WHERE brand = \'TBS\''},
-            
-            # === WEIGHT QUERIES ===
-            {"question": "Lightweight products under 50 grams", "sql": 'SELECT * FROM "Products" WHERE CAST(weight_g AS INTEGER) < 50 ORDER BY weight_g ASC'},
-            {"question": "Products under 100 grams", "sql": 'SELECT * FROM "Products" WHERE CAST(weight_g AS INTEGER) < 100 ORDER BY weight_g ASC'},
-            
-            # === CATEGORY BROWSING ===
-            {"question": "What product categories do you have", "sql": 'SELECT DISTINCT category FROM "Products"'},
-            {"question": "Show me all product categories", "sql": 'SELECT * FROM product_category'},
-            {"question": "What sub-categories are there for frames", "sql": 'SELECT DISTINCT sub_category FROM "Products" WHERE category = \'frame\''},
-            
-            # === PROPS ===
-            {"question": "Show me propellers", "sql": 'SELECT * FROM "Products" WHERE LOWER(category) = \'prop\''},
-            {"question": "What props do you have", "sql": 'SELECT * FROM "Products" WHERE LOWER(category) = \'prop\''},
-            
-            # === ANTENNAS (all connector types) ===
-            {"question": "Show me antennas", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\''},
-            {"question": "What antennas do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\''},
-            {"question": "Show me all antennas", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\''},
-            {"question": "Show me SMA antennas", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\' AND LOWER(sub_category) = \'sma\''},
-            {"question": "Show me RP-SMA antennas", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\' AND LOWER(sub_category) = \'rp-sma\''},
-            {"question": "Show me MMCX antennas", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\' AND LOWER(sub_category) = \'mmcx\''},
-            {"question": "Show me UFL antennas", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\' AND LOWER(sub_category) = \'ufl\''},
-            {"question": "What antennas with UFL connector do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\' AND LOWER(sub_category) = \'ufl\''},
-            {"question": "What antennas with SMA connector do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'antenna\' AND LOWER(sub_category) = \'sma\''},
-            
-            # === KITS ===
-            {"question": "Show me kits", "sql": 'SELECT * FROM "Products" WHERE category = \'kit\''},
-            {"question": "What combo kits do you have", "sql": 'SELECT * FROM "Products" WHERE category = \'kit\''},
-            
-            # === COMPLEX MULTI-CATEGORY QUERIES (drone builds) ===
-            {"question": "I want to build a 5 inch drone, show me frames, motors, VTX and cameras", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'frame\', \'motor\', \'vtx\', \'camera\') ORDER BY category, CAST(weight_g AS INTEGER)'},
-            {"question": "Show me all components for a drone build", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'frame\', \'motor\', \'vtx\', \'camera\', \'receiver\', \'antenna\', \'battery\', \'stack\', \'prop\') ORDER BY category'},
-            {"question": "What do I need to build a drone", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'frame\', \'motor\', \'vtx\', \'camera\', \'receiver\', \'antenna\', \'stack\') ORDER BY category'},
-            {"question": "Show me motors and frames for 5 inch drones", 
-             "sql": 'SELECT * FROM "Products" WHERE (category = \'motor\' AND sub_category = \'5inch\') OR (category = \'frame\' AND sub_category = \'5-inch\') ORDER BY category'},
-            {"question": "Show me video system components", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'vtx\', \'camera\', \'antenna\') ORDER BY category'},
-            {"question": "Show me DJI digital system components", 
-             "sql": 'SELECT * FROM "Products" WHERE brand = \'DJI\' AND category IN (\'vtx\', \'camera\') ORDER BY category'},
-            {"question": "What motors and cameras do you have", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'motor\', \'camera\') ORDER BY category'},
-            {"question": "Show me lightweight products under 50 grams for motors, cameras, and VTX", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'motor\', \'camera\', \'vtx\') AND CAST(weight_g AS INTEGER) < 50 ORDER BY category, CAST(weight_g AS INTEGER)'},
-            {"question": "I need motors, VTX, camera, and receiver for my build", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'motor\', \'vtx\', \'camera\', \'receiver\') ORDER BY category'},
-            {"question": "Show me all electronics for FPV", 
-             "sql": 'SELECT * FROM "Products" WHERE category IN (\'vtx\', \'camera\', \'receiver\', \'stack\') ORDER BY category'},
+            # 1. Handling the "Digital" vs "Analog" Logic (Requires Joining camera_specs)
+            {
+                "question": "Show me all digital nano cameras",
+                "sql": """SELECT t1.title, t1.brand, t1.weight_g 
+                          FROM "Products" t1 
+                          JOIN camera_specs t2 ON t1.product_id = t2.product_id 
+                          WHERE t1.category = 'camera' 
+                          AND t1.sub_category = 'nano' 
+                          AND t2.system = 'digital'"""
+            },
+            {
+                "question": "Show me analog cameras for micro drones",
+                "sql": """SELECT t1.title, t1.brand, t1.weight_g 
+                          FROM "Products" t1 
+                          JOIN camera_specs t2 ON t1.product_id = t2.product_id 
+                          WHERE t1.category = 'camera' 
+                          AND t2.size_class = 'micro' 
+                          AND t2.system = 'analog'"""
+            },
+            {
+                "question": "What digital cameras work for a 5 inch drone",
+                "sql": """SELECT t1.title, t1.brand, t1.weight_g, t2.digital_platform 
+                          FROM "Products" t1 
+                          JOIN camera_specs t2 ON t1.product_id = t2.product_id 
+                          WHERE t2.system = 'digital' 
+                          AND t2.size_class IN ('micro', 'standard')"""
+            },
+            # 2. Handling Ecosystem Specifics (DJI O3/Walksnail/HDZero)
+            {
+                "question": "I need a camera compatible with DJI O3",
+                "sql": """SELECT t1.title, t1.brand, t1.weight_g 
+                          FROM "Products" t1 
+                          JOIN camera_specs t2 ON t1.product_id = t2.product_id 
+                          WHERE t2.digital_platform = 'dji'"""
+            },
+            {
+                "question": "Show me Walksnail cameras and VTX",
+                "sql": """SELECT title, brand, category, weight_g 
+                          FROM "Products" 
+                          WHERE brand = 'Walksnail' 
+                          AND category IN ('camera', 'vtx')"""
+            },
+            {
+                "question": "What HDZero options do you have",
+                "sql": """SELECT title, brand, category, weight_g 
+                          FROM "Products" 
+                          WHERE brand = 'HDZero' 
+                          ORDER BY category"""
+            },
+            # 3. Handling VTX Power (Requires Joining vtx_specs)
+            {
+                "question": "Find me a high power VTX over 800mW",
+                "sql": """SELECT t1.title, t1.brand, t2.power_mw_max 
+                          FROM "Products" t1 
+                          JOIN vtx_specs t2 ON t1.product_id = t2.product_id 
+                          WHERE t2.power_mw_max >= 800"""
+            },
+            {
+                "question": "Show me analog VTX options",
+                "sql": """SELECT t1.title, t1.brand, t1.weight_g, t2.power_mw_max 
+                          FROM "Products" t1 
+                          JOIN vtx_specs t2 ON t1.product_id = t2.product_id 
+                          WHERE t2.system = 'analog'"""
+            },
+            # 4. Handling Receiver Protocols (ELRS/Crossfire)
+            {
+                "question": "Do you have any ELRS receivers?",
+                "sql": """SELECT title, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'receiver' 
+                          AND LOWER(sub_category) = 'elrs'"""
+            },
+            {
+                "question": "Show me Crossfire receivers",
+                "sql": """SELECT title, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'receiver' 
+                          AND LOWER(sub_category) = 'crsf'"""
+            },
+            # 5. Handling Antenna Connectors (SMA/UFL/MMCX)
+            {
+                "question": "I need an antenna with an SMA connector",
+                "sql": """SELECT title, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'antenna' 
+                          AND LOWER(sub_category) = 'sma'"""
+            },
+            {
+                "question": "Show me UFL antennas for whoop drones",
+                "sql": """SELECT title, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'antenna' 
+                          AND LOWER(sub_category) = 'ufl'"""
+            },
+            # 6. Handling Motor searches
+            {
+                "question": "Show me motors for whoop drones",
+                "sql": """SELECT title, brand, weight_g, sub_category 
+                          FROM "Products" 
+                          WHERE category = 'motor' 
+                          AND sub_category = 'whoop'"""
+            },
+            {
+                "question": "What 5 inch motors do you have",
+                "sql": """SELECT title, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'motor' 
+                          AND sub_category = '5inch'"""
+            },
+            # 7. Handling Brand searches
+            {
+                "question": "What Foxeer cameras do you have?",
+                "sql": """SELECT title, sub_category, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'camera' 
+                          AND brand = 'Foxeer'"""
+            },
+            {
+                "question": "Show me all Caddx products",
+                "sql": """SELECT title, category, sub_category, weight_g 
+                          FROM "Products" 
+                          WHERE brand = 'Caddx' 
+                          ORDER BY category"""
+            },
+            {
+                "question": "What TBS products do you have",
+                "sql": """SELECT title, category, weight_g 
+                          FROM "Products" 
+                          WHERE brand = 'TBS' 
+                          ORDER BY category"""
+            },
+            # 8. Frame and Size queries
+            {
+                "question": "Show me 5 inch frames",
+                "sql": """SELECT title, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'frame' 
+                          AND sub_category = '5-inch'"""
+            },
+            {
+                "question": "What whoop frames do you have",
+                "sql": """SELECT title, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category = 'frame' 
+                          AND sub_category IN ('whoop', 'cinewhoop')"""
+            },
+            # 9. Multi-category drone build queries
+            {
+                "question": "Show me all components for a drone build",
+                "sql": """SELECT title, category, sub_category, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category IN ('frame', 'motor', 'vtx', 'camera', 'receiver', 'antenna', 'stack') 
+                          ORDER BY category"""
+            },
+            {
+                "question": "I want to build a 5 inch drone show me frames motors cameras and VTX",
+                "sql": """SELECT title, category, brand, weight_g 
+                          FROM "Products" 
+                          WHERE category IN ('frame', 'motor', 'camera', 'vtx') 
+                          ORDER BY category, CAST(weight_g AS INTEGER)"""
+            }
         ]
-        
-        # Add documentation about table naming convention
-        vanna.train(documentation="""
-            DATABASE SCHEMA GUIDE:
-            
-            1. MAIN PRODUCTS TABLE: "Products" (capital P, requires double quotes)
-               - Contains: product_id, title, brand, category, sub_category, weight_g, status, etc.
-               - USE THIS TABLE for ALL questions about:
-                 * Product listings, filtering, searching
-                 * Weight queries (weight_g column)
-                 * Category/brand filtering
-                 * General product information
-                 * Antennas, cameras, VTX, receivers, motors, frames, props, batteries, stacks, kits
-               - Example: SELECT * FROM "Products" WHERE weight_g < 250
-               - Example: SELECT * FROM "Products" WHERE category = 'motor'
-               - Example: SELECT * FROM "Products" WHERE category = 'antenna'
-            
-            2. CRITICAL RULES FOR ANTENNAS:
-               - ALWAYS use the "Products" table for antenna queries
-               - The sub_category column contains connector type: sma, rp-sma, mmcx, ufl
-               - CORRECT: SELECT * FROM "Products" WHERE category = 'antenna'
-               - CORRECT: SELECT * FROM "Products" WHERE category = 'antenna' AND sub_category = 'sma'
-               - WRONG: SELECT * FROM antenna_specs (DO NOT USE THIS FOR PRODUCT LISTINGS)
-            
-            3. SPEC TABLES (lowercase, no quotes needed):
-               - motor_specs, battery_specs, frame_specs, camera_specs, antenna_specs
-               - ONLY use these for detailed technical specifications like kv ratings, connector pin diagrams
-               - DO NOT use spec tables when user asks "show me" or "list" or "what do you have"
-            
-            4. IMPORTANT RULES:
-               - Always use double quotes for "Products": SELECT * FROM "Products"
-               - For product weight queries, use "Products".weight_g
-               - For product counts/listings, ALWAYS use "Products"
-               - When in doubt, use the "Products" table
-        """)
         
         for sq in sample_queries:
             try:
